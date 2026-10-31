@@ -77,6 +77,14 @@ export function removeTracker(data: Data, id: string): Data {
   };
 }
 
+// Move the tracker at index `from` to index `to`.
+export function moveTracker(data: Data, from: number, to: number): Data {
+  const trackers = [...data.trackers];
+  const [tracker] = trackers.splice(from, 1);
+  trackers.splice(to, 0, tracker);
+  return { ...data, trackers };
+}
+
 export function saveEntry(data: Data, entry: Omit<Entry, 'id'>, id: string | null): Data {
   if (id === null) {
     return { ...data, entries: [...data.entries, { ...entry, id: crypto.randomUUID() }] };

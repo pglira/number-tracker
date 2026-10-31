@@ -1,5 +1,6 @@
 import {
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent,
   type ReactNode,
   useEffect,
@@ -20,6 +21,7 @@ import {
   formatValue,
   fromInputTime,
   loadData,
+  moveTracker,
   nextColor,
   parseValue,
   rangeOf,
@@ -120,6 +122,7 @@ export default function App() {
           onAdd={(trackerId) => setSheet({ kind: 'entry', trackerId, id: null })}
           onEdit={(id) => setSheet({ kind: 'tracker', id })}
           onDelete={(id) => setData((d) => removeTracker(d, id))}
+          onMove={(from, to) => setData((d) => moveTracker(d, from, to))}
         />
       )}
 
@@ -177,19 +180,38 @@ interface StartPageProps {
   onAdd: (trackerId: string) => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
+  onMove: (from: number, to: number) => void;
 }
 
 // All trackers, each with its current value and a chart of the last 30 days.
-function StartPage({ data, themeButton, onOpen, onNew, onAdd, onEdit, onDelete }: StartPageProps) {
+// The order button shows the trackers with drag handles to change their order.
+function StartPage({ data, themeButton, onOpen, onNew, onAdd, onEdit, onDelete, onMove }: StartPageProps) {
   // The id of the tracker whose row shows the swipe actions.
   const [swiped, setSwiped] = useState<string | null>(null);
+  // True while the list shows drag handles to change the order of the trackers.
+  const [reorder, setReorder] = useState(false);
   const now = Date.now();
+  const reordering = reorder && data.trackers.length > 1;
 
   return (
     <>
       <header>
         <h1>Numbers</h1>
         <div className="header-buttons">
+          {data.trackers.length > 1 && (
+            <button
+              className={reordering ? 'icon active' : 'icon'}
+              onClick={() => {
+                setSwiped(null);
+                setReorder(!reordering);
+              }}
+              aria-pressed={reordering}
+              aria-label="Change order"
+              title="Change order"
+            >
+              <Icon name={reordering ? 'check' : 'sort'} />
+            </button>
+          )}
           {themeButton}
           <button className="add" onClick={onNew} aria-label="New tracker" title="New tracker">
             <Icon name="plus" size={24} />
@@ -201,50 +223,140 @@ function StartPage({ data, themeButton, onOpen, onNew, onAdd, onEdit, onDelete }
         <p className="empty">No trackers. Tap + to track a number, for example your weight.</p>
       )}
 
-      <ul>
-        {data.trackers.map((tracker) => {
-          const entries = entriesOf(data, tracker.id);
-          const [from, to] = rangeOf('month', entries, now);
-          return (
-            <SwipeRow
-              key={tracker.id}
-              className="card"
-              style={{ '--color': tracker.color } as CSSProperties}
-              confirmDelete
-              open={swiped === tracker.id}
-              onOpen={() => setSwiped(tracker.id)}
-              onClose={() => setSwiped(null)}
-              onEdit={() => {
-                setSwiped(null);
-                onEdit(tracker.id);
-              }}
-              onDelete={() => {
-                setSwiped(null);
-                onDelete(tracker.id);
-              }}
-            >
-              <div className="card-head">
-                <button className="info" onClick={() => onOpen(tracker.id)} aria-label={`Open ${tracker.name}`}>
-                  <span className="name">{tracker.name}</span>
-                  <Headline tracker={tracker} entries={entries} now={now} />
+      {reordering ? (
+        <ReorderList data={data} now={now} onMove={onMove} />
+      ) : (
+        <ul>
+          {data.trackers.map((tracker) => {
+            const entries = entriesOf(data, tracker.id);
+            const [from, to] = rangeOf('month', entries, now);
+            return (
+              <SwipeRow
+                key={tracker.id}
+                className="card"
+                style={{ '--color': tracker.color } as CSSProperties}
+                confirmDelete
+                open={swiped === tracker.id}
+                onOpen={() => setSwiped(tracker.id)}
+                onClose={() => setSwiped(null)}
+                onEdit={() => {
+                  setSwiped(null);
+                  onEdit(tracker.id);
+                }}
+                onDelete={() => {
+                  setSwiped(null);
+                  onDelete(tracker.id);
+                }}
+              >
+                <div className="card-head">
+                  <button className="info" onClick={() => onOpen(tracker.id)} aria-label={`Open ${tracker.name}`}>
+                    <span className="name">{tracker.name}</span>
+                    <Headline tracker={tracker} entries={entries} now={now} />
+                  </button>
+                  <button
+                    className="add add-value"
+                    onClick={() => onAdd(tracker.id)}
+                    aria-label={`Add a value to ${tracker.name}`}
+                    title="Add value"
+                  >
+                    <Icon name="plus" size={24} />
+                  </button>
+                </div>
+                <button className="chart-button" onClick={() => onOpen(tracker.id)} tabIndex={-1} aria-hidden="true">
+                  <Chart type={tracker.chart} color={tracker.color} entries={entries} from={from} to={to} height={72} />
                 </button>
-                <button
-                  className="add add-value"
-                  onClick={() => onAdd(tracker.id)}
-                  aria-label={`Add a value to ${tracker.name}`}
-                  title="Add value"
-                >
-                  <Icon name="plus" size={24} />
-                </button>
-              </div>
-              <button className="chart-button" onClick={() => onOpen(tracker.id)} tabIndex={-1} aria-hidden="true">
-                <Chart type={tracker.chart} color={tracker.color} entries={entries} from={from} to={to} height={72} />
-              </button>
-            </SwipeRow>
-          );
-        })}
-      </ul>
+              </SwipeRow>
+            );
+          })}
+        </ul>
+      )}
     </>
+  );
+}
+
+interface ReorderListProps {
+  data: Data;
+  now: number;
+  onMove: (from: number, to: number) => void;
+}
+
+// The trackers with a drag handle on each row. Drag a handle up or down to move
+// the tracker. The arrow keys move the tracker of the focused handle.
+function ReorderList({ data, now, onMove }: ReorderListProps) {
+  const trackers = data.trackers;
+  // The dragged tracker, the pointer position at which its row is at rest, and
+  // the current pointer position.
+  const [drag, setDrag] = useState<{ id: string; origin: number; y: number } | null>(null);
+  const rows = useRef<HTMLUListElement>(null);
+
+  // The distance between the tops of two rows in pixels.
+  const step = () => {
+    const ul = rows.current;
+    const li = ul?.firstElementChild as HTMLElement | null;
+    if (!ul || !li) return 1;
+    return li.offsetHeight + parseFloat(getComputedStyle(ul).rowGap || '0');
+  };
+
+  const onPointerMove = (e: PointerEvent) => {
+    if (!drag) return;
+    const index = trackers.findIndex((t) => t.id === drag.id);
+    const s = step();
+    let origin = drag.origin;
+    let to = index;
+    while (e.clientY - origin > s / 2 && to < trackers.length - 1) {
+      origin += s;
+      to++;
+    }
+    while (e.clientY - origin < -s / 2 && to > 0) {
+      origin -= s;
+      to--;
+    }
+    if (to !== index) onMove(index, to);
+    setDrag({ id: drag.id, origin, y: e.clientY });
+  };
+
+  const onKeyDown = (e: ReactKeyboardEvent, index: number) => {
+    const to = e.key === 'ArrowUp' ? index - 1 : e.key === 'ArrowDown' ? index + 1 : -1;
+    if (to < 0 || to >= trackers.length) return;
+    e.preventDefault();
+    onMove(index, to);
+  };
+
+  return (
+    <ul ref={rows} className="reorder">
+      {trackers.map((tracker, index) => {
+        const dragged = drag?.id === tracker.id;
+        const style = {
+          '--color': tracker.color,
+          transform: dragged ? `translateY(${drag.y - drag.origin}px)` : undefined,
+        } as CSSProperties;
+        return (
+          <li key={tracker.id} className={`card${dragged ? ' dragged' : ''}`} style={style}>
+            <div className="card-head">
+              <span className="info">
+                <span className="name">{tracker.name}</span>
+                <Headline tracker={tracker} entries={entriesOf(data, tracker.id)} now={now} />
+              </span>
+              <button
+                className="handle"
+                aria-label={`Move ${tracker.name}`}
+                title="Drag to move"
+                onPointerDown={(e) => {
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                  setDrag({ id: tracker.id, origin: e.clientY, y: e.clientY });
+                }}
+                onPointerMove={onPointerMove}
+                onPointerUp={() => setDrag(null)}
+                onPointerCancel={() => setDrag(null)}
+                onKeyDown={(e) => onKeyDown(e, index)}
+              >
+                <Icon name="grip" size={24} />
+              </button>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
