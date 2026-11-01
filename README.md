@@ -8,6 +8,7 @@ A Progressive Web App that tracks numbers over time, for example the weight, the
 - The page of a tracker shows a chart for 7 days, 30 days, 90 days, 1 year or all values, statistics and the list of values.
 - Swipe a tracker or a value to the left to show Edit and Delete.
 - Change the order of the trackers: tap the order button on the start page and drag the handle of a tracker up or down.
+- Move the data to a new phone: tap the backup button in the header and export all data to a JSON file. On the new phone, import the file and tap "Tap to replace all data". The theme is not in the file.
 
 ## Tech
 

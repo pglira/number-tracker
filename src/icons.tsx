@@ -13,6 +13,9 @@ const PATHS = {
   check: 'M5 12l5 5L19 7',
   sort: 'M8 4v16M4 16l4 4 4-4M16 20V4M12 8l4-4 4 4',
   grip: 'M4 8h16M4 12h16M4 16h16',
+  backup: 'M4 5h16v4H4zM5 9v10h14V9M10 13h4',
+  download: 'M12 4v11M7 10l5 5l5-5M4 20h16',
+  upload: 'M12 15V4M7 9l5-5l5 5M4 20h16',
 };
 
 export type IconName = keyof typeof PATHS;

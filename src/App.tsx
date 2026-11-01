@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { BackupForm } from './BackupForm';
 import { Chart } from './Chart';
 import {
   COLORS,
@@ -48,7 +49,12 @@ const THEME_LABELS: Record<Theme, string> = {
 type Sheet =
   | { kind: 'tracker'; id: string | null }
   | { kind: 'entry'; trackerId: string; id: string | null }
+  | { kind: 'backup' }
   | null;
+
+// The backup holds all stored data of the app except the theme.
+const APP_ID = 'number-tracker';
+const isDataKey = (key: string) => key.startsWith(`${APP_ID}.`) && key !== `${APP_ID}.theme`;
 
 // The URL hash '#/<tracker id>' shows the page of one tracker, so that the
 // back button of the browser returns to the start page.
@@ -119,6 +125,7 @@ export default function App() {
           themeButton={themeButton}
           onOpen={go}
           onNew={() => setSheet({ kind: 'tracker', id: null })}
+          onBackup={() => setSheet({ kind: 'backup' })}
           onAdd={(trackerId) => setSheet({ kind: 'entry', trackerId, id: null })}
           onEdit={(id) => setSheet({ kind: 'tracker', id })}
           onDelete={(id) => setData((d) => removeTracker(d, id))}
@@ -147,6 +154,8 @@ export default function App() {
           }
         />
       )}
+
+      {sheet?.kind === 'backup' && <BackupForm app={APP_ID} isKey={isDataKey} onClose={close} />}
 
       {sheet?.kind === 'entry' && sheetTracker && (
         <EntryForm
@@ -177,6 +186,7 @@ interface StartPageProps {
   themeButton: ReactNode;
   onOpen: (id: string) => void;
   onNew: () => void;
+  onBackup: () => void;
   onAdd: (trackerId: string) => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
@@ -185,7 +195,8 @@ interface StartPageProps {
 
 // All trackers, each with its current value and a chart of the last 30 days.
 // The order button shows the trackers with drag handles to change their order.
-function StartPage({ data, themeButton, onOpen, onNew, onAdd, onEdit, onDelete, onMove }: StartPageProps) {
+function StartPage(props: StartPageProps) {
+  const { data, themeButton, onOpen, onNew, onBackup, onAdd, onEdit, onDelete, onMove } = props;
   // The id of the tracker whose row shows the swipe actions.
   const [swiped, setSwiped] = useState<string | null>(null);
   // True while the list shows drag handles to change the order of the trackers.
@@ -212,6 +223,9 @@ function StartPage({ data, themeButton, onOpen, onNew, onAdd, onEdit, onDelete, 
               <Icon name={reordering ? 'check' : 'sort'} />
             </button>
           )}
+          <button className="icon" onClick={onBackup} aria-label="Backup" title="Backup">
+            <Icon name="backup" />
+          </button>
           {themeButton}
           <button className="add" onClick={onNew} aria-label="New tracker" title="New tracker">
             <Icon name="plus" size={24} />
